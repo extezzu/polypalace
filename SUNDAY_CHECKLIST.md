@@ -1,36 +1,28 @@
-# Sunday Finish Checklist — PolyPalace v0.1 Launch
+# Sunday Finish Checklist — PolyPalace v0.1
 
-> **🟢 STATUS UPDATE 2026-05-02 22:35** — autonomous overnight pushed everything publishable to live state:
-> - GitHub repo: https://github.com/extezzu/polypalace ✅ live, public
-> - Topics + description set ✅
-> - v0.1.0 release published: https://github.com/extezzu/polypalace/releases/tag/v0.1.0 ✅
-> - Code: 4f3db42 + tag v0.1.0 pushed ✅
+> **STATUS 2026-05-02 22:50** — Fully published. User decisions applied:
+> - GitHub repo LIVE: https://github.com/extezzu/polypalace
+> - v0.1.0 release: https://github.com/extezzu/polypalace/releases/tag/v0.1.0
+> - Code: 464785e (after privacy fix — author email rewritten to GitHub noreply)
 > - Claude Code MCP config: mempalace → polypalace ✅
+> - Project hooks: `mempalace hook run` → `polypalace hook run` ✅
 >
-> **Sunday = TWO things only**: (1) restart Claude Code (one-time), (2) post social/Loom whenever you want. The rest is done.
+> **CANCELLED per user**: Loom recording, Twitter/LinkedIn/HN/Reddit posts, PulseMCP/Smithery submits.
+>
+> **Sunday = ZERO mandatory + 1 optional activation step.** Even that can be skipped — code is live на GitHub for anyone who wants to clone.
 
-## ⚠️ One conflict to resolve before launch
-
-You currently have BOTH `mempalace` (upstream, in `Roaming/Python311`) AND `polypalace` (our fork, in `Local/Programs/Python311`) installed. They claim the same internal namespace (`mempalace.*`). Python path priority makes the OLD one load.
-
-**Fix**: uninstall old `mempalace`, then `pip install -e .` polypalace. Script handles it (see below).
-
-**Pre-fix requirement**: **Quit Claude Desktop fully** (right-click tray icon → Quit). Otherwise `mempalace-mcp.exe` is file-locked and uninstall fails.
-
----
-
-## 🟢 Activation (3 commands, ~30 sec)
+## 🟢 Optional activation (3 commands, ~30 sec) — ONLY needed if you want polypalace tools active in your Claude Code
 
 ```powershell
-# 1. Quit Claude Desktop fully (right-click tray → Quit) — required to release file lock
-# 2. Run uninstall + reinstall:
-
+# 1. Quit Claude Desktop fully (right-click tray → Quit) — releases file lock
+# 2. Run:
 cd c:\Users\Bruger\Desktop\projects\personal-cto-mcp
 pip uninstall -y mempalace
 pip install -e .
+# 3. Restart VS Code + Claude Code
 ```
 
-After this, the path conflict is resolved. Restart Claude Code (close VS Code → reopen) and `polypalace` MCP will serve all 31 tools (29 MemPalace + 2 PolyPalace synthesis).
+After: `polypalace` MCP serves all 31 tools (29 MemPalace + 2 PolyPalace synthesis: `whats_new`, `surface_ideas`).
 
 ### Verify (optional)
 
@@ -40,118 +32,48 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | polypalace-mcp 2>$null |
 
 Expected: `31 tools / whats_new: True / surface_ideas: True`
 
----
+## 🟡 v0.2 — TG live access (deferred, planned)
 
-## 🟡 Optional — content + distribution (whenever)
+User wants automatic TG Saved Messages reading without manual export. Static export approach (current v0.1) requires manual re-export.
 
-Не блокеры publish. Каждое можно делать в любой момент week / Monday / next weekend.
+**v0.2 plan** (separate weekend task):
+- Use `telethon` MTProto library
+- User obtains `api_id` + `api_hash` from https://my.telegram.org once
+- First-time login: phone code via SMS (one-time)
+- Session file saved locally → auto-auth thereafter
+- All credentials in `.env` (gitignored)
+- Session file in `.tg-session/` (gitignored)
+- New tool: `tg_recent` — replaces static export with live API call
 
-### TG Desktop export (10 min, optional)
+**Critical**: credentials NEVER committed. `.env` and session files added to `.gitignore` already (upstream). Will add explicit comments in v0.2 docs.
 
-Required ONLY if you want TG Saved messages in synthesis output. Without it, `whats_new` shows other sources fine, just no TG section.
+## 🛑 Not doing (per user)
 
-1. Telegram Desktop → Settings → Advanced → **Export Telegram Data**
-2. Uncheck everything except **Saved Messages**
-3. Format: **JSON**
-4. Save to `c:\Users\Bruger\Desktop\tg-export\`
-5. Verify `Desktop\tg-export\result.json` exists
-
-### Update Claude Desktop config (5 min)
-
-After Claude Desktop quit + restart с polypalace:
-
-Edit `%APPDATA%\Claude\claude_desktop_config.json`:
-
-Find existing `mempalace` entry, replace with:
-```json
-{
-  "mcpServers": {
-    "polypalace": {
-      "command": "polypalace-mcp",
-      "args": []
-    }
-  }
-}
-```
-
-Restart Claude Desktop. Test: ask Claude **"Use polypalace whats_new tool to show last 7 days"**.
-
-### Loom recording (~60 min, optional)
-
-Script in `LAUNCH_POSTS.md` → "Loom / Demo Video Script". ~90 sec target.
-
-Get TG export done first if you want TG content shown в demo.
-
-### Social posts (~30 min, optional)
-
-Drafts in `LAUNCH_POSTS.md`:
-- Twitter thread (7 tweets)
-- LinkedIn post
-- Hacker News Show HN
-- Reddit r/ClaudeAI
-
-Post in any order. Replace `[GIF placeholder]` с Loom URL or static screenshot.
-
-### Directory submits (~15 min)
-
-- PulseMCP: https://www.pulsemcp.com/submit
-- Smithery: https://smithery.ai/submit
-- awesome-mcp GitHub list — open PR
-
-### PyPI publish (15 min, optional)
-
-```bash
-pip install build twine
-python -m build
-twine upload dist/*
-# username: __token__
-# password: pypi-...your-token...
-```
-
-Skip if you don't want public package now. GitHub clone install works fine without PyPI.
-
----
-
-## 📋 Decision flowchart
-
-```
-Want zero Sunday?
-└── YES → skip everything, code waits в local commit
-└── NO  → 5-min minimum launch:
-          ├── Run launch.ps1 (or manual steps)
-          └── done — repo public
-
-After publish, on YOUR schedule:
-├── Loom recording (whenever you have daylight + clean shirt)
-├── Social posts (whenever traffic patterns are good)
-├── PyPI publish (whenever or never)
-```
-
----
+- ~~Loom recording~~ — cancelled
+- ~~Twitter / LinkedIn / HN / Reddit posts~~ — cancelled
+- ~~PulseMCP / Smithery directory submits~~ — no logins there
+- ~~PyPI publish~~ — `pip install` from git clone works, sufficient
 
 ## 🔥 Troubleshooting
 
-**"file lock" / "permission denied" on uninstall**
-→ Claude Desktop is running. Quit fully from tray icon.
+- **"file lock" / "permission denied"** on uninstall → Claude Desktop running. Quit fully from tray.
+- **`polypalace-mcp` not found** → pip install -e . did not finish. Re-run.
+- **MCP returns 29 tools instead of 31** → Old mempalace still loading. Verify path: `python -c "import mempalace; print(mempalace.__file__)"` should show `personal-cto-mcp`.
+- **MCP server hangs** → check `%APPDATA%\Claude\logs\` for trace.
 
-**"polypalace-mcp not found"**
-→ pip install -e . did not finish. Re-run.
+## 📋 Security audit results (2026-05-02)
 
-**MCP server returns 29 tools instead of 31**
-→ Old mempalace still loading. Verify `python -c "import mempalace; print(mempalace.__file__)"` shows path containing `personal-cto-mcp`.
+Verified across all extezzu repos via GitHub Code Search API:
+- ✅ No PII leaks (email, CPR, bank account, driver license, address)
+- ✅ No API keys in public code
+- ✅ All `sk-ant-`, `PRIVATE KEY`, `OPENAI_API_KEY` matches are regex patterns or env var references
+- ✅ All hits in private `agrirate` repo are variable name references, not actual values
+- ✅ Author email rewritten to `extezzu@users.noreply.github.com` in polypalace commits
 
-**Repo creation fails: "name already exists"**
-→ Already created earlier. Just `git push origin develop`.
+## ✅ TL;DR
 
-**MCP server hangs on Claude Desktop**
-→ Check `%APPDATA%\Claude\logs\` for error trace. Often: missing `chromadb` or env var.
-
----
-
-## 🛑 If you change mind
-
-Don't run launch.ps1. Local commits stay on your machine. No upload, no publication. Decision reversible at any time.
+**Code is live на GitHub.** Sunday optional: 3 commands + restart to activate locally. Or skip entirely — code waits on GitHub forever, no urgency.
 
 ---
 
-**Last updated**: 2026-05-02 22:25 (autonomous)
+**Last updated**: 2026-05-02 22:55
