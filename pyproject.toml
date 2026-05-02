@@ -1,16 +1,17 @@
 [project]
-name = "mempalace"
-version = "3.3.3"
-description = "Give your AI a memory — mine projects and conversations into a searchable palace. No API key required."
+name = "polypalace"
+version = "0.1.0"
+description = "Personal AI assistant — synthesizes activity across multi-project folders, Brave bookmarks, Telegram saved messages, and a MemPalace memory layer. Trigger phrase: 'Шо слышно?'"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
 authors = [
-    {name = "milla-jovovich"},
+    {name = "Dmytro Zlodieiev"},
 ]
 keywords = [
     "ai", "memory", "llm", "rag", "chromadb", "mcp",
-    "vector-database", "claude", "chatgpt", "embeddings",
+    "vector-database", "claude", "claude-desktop", "anthropic",
+    "synthesis", "personal-assistant", "multi-project",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -33,30 +34,31 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/MemPalace/mempalace"
-Repository = "https://github.com/MemPalace/mempalace"
-"Bug Tracker" = "https://github.com/MemPalace/mempalace/issues"
+Homepage = "https://github.com/extezzu/polypalace"
+Repository = "https://github.com/extezzu/polypalace"
+"Bug Tracker" = "https://github.com/extezzu/polypalace/issues"
+"Upstream (MemPalace)" = "https://github.com/MemPalace/mempalace"
 
 [project.scripts]
+polypalace = "mempalace.cli:main"
+polypalace-mcp = "mempalace.mcp_server:main"
+# Backwards-compatible aliases (so users who set up the upstream binary names still work)
 mempalace = "mempalace.cli:main"
 mempalace-mcp = "mempalace.mcp_server:main"
 
 [project.entry-points."mempalace.backends"]
 chroma = "mempalace.backends.chroma:ChromaBackend"
 
-# RFC 002 source-adapter entry-point group. Core publishes no first-party
-# adapters under this group yet; ``miner.py`` and ``convo_miner.py`` migrate
-# onto ``BaseSourceAdapter`` in a follow-up PR. Third-party adapter packages
-# (``mempalace-source-cursor``, ``mempalace-source-git``, …) register here.
+# RFC 002 source-adapter entry-point group inherited from upstream.
 [project.entry-points."mempalace.sources"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.4.0", "psutil>=5.9"]
 spellcheck = ["autocorrect>=2.0"]
 # Hardware acceleration for the ONNX embedding model. Install exactly one:
-#   pip install mempalace[gpu]       — NVIDIA CUDA
-#   pip install mempalace[dml]       — DirectML (Windows AMD/Intel/NVIDIA)
-#   pip install mempalace[coreml]    — macOS Neural Engine
+#   pip install polypalace[gpu]       — NVIDIA CUDA
+#   pip install polypalace[dml]       — DirectML (Windows AMD/Intel/NVIDIA)
+#   pip install polypalace[coreml]    — macOS Neural Engine
 # After install, set MEMPALACE_EMBEDDING_DEVICE=cuda|dml|coreml (or "auto").
 gpu = ["onnxruntime-gpu>=1.16"]
 dml = ["onnxruntime-directml>=1.16"]

@@ -80,6 +80,13 @@ from .palace_graph import (  # noqa: E402
 
 from .knowledge_graph import KnowledgeGraph  # noqa: E402
 
+# Synthesis layer tools (added 2026-05-02 — Personal CTO MCP fork extension)
+# These tools synthesize across multi-project folders + Brave bookmarks + TG export
+# in addition to the palace itself. They are pure-function and gracefully degrade
+# when sources are missing.
+from .synthesis.whats_new import whats_new as tool_whats_new  # noqa: E402
+from .synthesis.surface_ideas import surface_ideas as tool_surface_ideas  # noqa: E402
+
 logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
 logger = logging.getLogger("mempalace_mcp")
 
@@ -1809,6 +1816,63 @@ TOOLS = {
             "properties": {},
         },
         "handler": tool_reconnect,
+    },
+    # ---------------------------------------------------------------------
+    # Synthesis layer tools — Personal CTO MCP fork extension (2026-05-02)
+    # ---------------------------------------------------------------------
+    "whats_new": {
+        "description": (
+            "Composite synthesis of recent activity across multi-project folders, Brave bookmarks, "
+            "Telegram Saved Messages export, and palace drawers. Trigger phrase: 'Шо слышно?' / "
+            "'what's new?' Returns Markdown summary grouped by source. Inputs: days (default 7), "
+            "focus (optional project name OR topic for filtering)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {
+                    "type": "integer",
+                    "description": "Lookback window in days (default 7, max 90)",
+                    "default": 7,
+                },
+                "focus": {
+                    "type": "string",
+                    "description": "Optional: project name OR topic keyword to narrow synthesis",
+                },
+            },
+        },
+        "handler": tool_whats_new,
+    },
+    "surface_ideas": {
+        "description": (
+            "Surface relevant content from past saves matching a topic. Searches across project "
+            "files (keyword), Brave bookmarks, TG saved messages, and palace drawers (semantic). "
+            "Different from whats_new: this is topic-specific recall, not recent-activity synthesis. "
+            "Use when user asks 'what did I save about X' or 'show me my notes on X'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "description": "Search query (required)",
+                },
+                "sources": {
+                    "type": "string",
+                    "description": (
+                        "Comma-separated subset to search. Options: 'projects', 'bookmarks', "
+                        "'tg', 'palace', 'all'. Default: 'all'."
+                    ),
+                    "default": "all",
+                },
+                "days": {
+                    "type": "integer",
+                    "description": "Optional: limit to items from last N days",
+                },
+            },
+            "required": ["topic"],
+        },
+        "handler": tool_surface_ideas,
     },
 }
 
