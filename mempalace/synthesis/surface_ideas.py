@@ -11,7 +11,25 @@ from __future__ import annotations
 
 from .sources import projects as projects_src
 from .sources import bookmarks as bookmarks_src
-from .sources import tg_export as tg_src
+from .sources import tg_export as tg_export_src
+from .sources import tg_live as tg_live_src
+
+
+def _search_tg(query: str, days: int | None = None) -> list[dict]:
+    """Search BOTH live and static TG sources, dedupe, return combined."""
+    live = tg_live_src.search(query=query, days=days)
+    static = tg_export_src.search(query=query, days=days)
+    if not live:
+        return static
+    if not static:
+        return live
+    seen = {it.get("id") for it in live if it.get("id")}
+    combined = list(live)
+    for it in static:
+        if it.get("id") not in seen:
+            combined.append(it)
+    combined.sort(key=lambda x: x.get("score", 0), reverse=True)
+    return combined[:20]
 
 
 def _query_mempalace_search(topic: str) -> list[dict]:
@@ -146,7 +164,7 @@ def surface_ideas(
         bookmark_matches = bookmarks_src.search(query=topic, days=days)
 
     if use_all or "tg" in enabled:
-        tg_matches = tg_src.search(query=topic, days=days)
+        tg_matches = _search_tg(query=topic, days=days)
 
     if use_all or "palace" in enabled:
         palace_matches = _query_mempalace_search(topic=topic)

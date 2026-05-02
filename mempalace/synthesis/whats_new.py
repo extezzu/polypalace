@@ -19,7 +19,30 @@ from typing import Any
 
 from .sources import projects as projects_src
 from .sources import bookmarks as bookmarks_src
-from .sources import tg_export as tg_src
+from .sources import tg_export as tg_export_src
+from .sources import tg_live as tg_live_src
+
+
+def _gather_tg(days: int) -> list[dict]:
+    """
+    Aggregate TG saved messages from BOTH live (telethon) and static (export) sources.
+    Live preferred when credentials present; export as fallback or supplement.
+    Dedupe by id.
+    """
+    live = tg_live_src.recent(days=days)
+    static = tg_export_src.recent(days=days)
+    if not live:
+        return static
+    if not static:
+        return live
+    # Combine, dedupe by id (prefer live entries)
+    seen = {it.get("id") for it in live if it.get("id")}
+    combined = list(live)
+    for it in static:
+        if it.get("id") not in seen:
+            combined.append(it)
+    combined.sort(key=lambda x: x.get("_unix_ts", 0), reverse=True)
+    return combined
 
 
 def _format_project_section(items: list[dict]) -> str:
@@ -176,7 +199,7 @@ def whats_new(days: int = 7, focus: str | None = None) -> dict:
     # Gather sources
     proj_items = projects_src.recent_activity(days=days, project=focus if focus else None)
     bookmark_items = bookmarks_src.recent(days=days)
-    tg_items = tg_src.recent(days=days)
+    tg_items = _gather_tg(days=days)
     palace_items = _query_mempalace_recent(days=days)
 
     # If focus is a topic (not a project name), filter via keyword
