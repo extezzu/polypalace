@@ -14,6 +14,11 @@ mempal.yaml
 .env
 .env.*
 
+# PolyPalace v0.2 — TG live access (telethon credentials and session files, never commit)
+.tg-session/
+*.session
+*.session-journal
+
 # OS
 .DS_Store
 Thumbs.db

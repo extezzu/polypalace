@@ -55,6 +55,10 @@ chroma = "mempalace.backends.chroma:ChromaBackend"
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.4.0", "psutil>=5.9"]
 spellcheck = ["autocorrect>=2.0"]
+# v0.2 Telegram live access via MTProto:
+#   pip install polypalace[tg]
+# Then add credentials to .env (TG_API_ID, TG_API_HASH, TG_PHONE).
+tg = ["telethon>=1.36", "python-dotenv>=1.0"]
 # Hardware acceleration for the ONNX embedding model. Install exactly one:
 #   pip install polypalace[gpu]       — NVIDIA CUDA
 #   pip install polypalace[dml]       — DirectML (Windows AMD/Intel/NVIDIA)
