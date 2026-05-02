@@ -86,6 +86,7 @@ from .knowledge_graph import KnowledgeGraph  # noqa: E402
 # when sources are missing.
 from .synthesis.whats_new import whats_new as tool_whats_new  # noqa: E402
 from .synthesis.surface_ideas import surface_ideas as tool_surface_ideas  # noqa: E402
+from .synthesis.take_in_work import take_in_work as tool_take_in_work  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
 logger = logging.getLogger("mempalace_mcp")
@@ -1873,6 +1874,35 @@ TOOLS = {
             "required": ["topic"],
         },
         "handler": tool_surface_ideas,
+    },
+    "take_in_work": {
+        "description": (
+            "Mark a Telegram Saved Message as 'taken into work' — DELETES it from Saved Messages "
+            "permanently. Use ONLY when user explicitly says they're starting/taking a task or idea "
+            "from their TG Saved (e.g. 'беру в работу X', 'I'll start that AI brain idea'). "
+            "ALWAYS verify the exact message with user before calling (quote first ~60 chars). "
+            "Pass confirm=true ONLY after user-confirmed intent. Without confirm=true, tool refuses."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "message_id": {
+                    "type": "string",
+                    "description": (
+                        "Composite ID from whats_new/surface_ideas output, format 'AAAAAA:BB' "
+                        "where AAAAAA is account suffix (last 6 digits of phone) and BB is the "
+                        "telegram message ID. E.g. '196993:42'."
+                    ),
+                },
+                "confirm": {
+                    "type": "boolean",
+                    "description": "Must be true. Safety gate to prevent accidental deletion.",
+                    "default": False,
+                },
+            },
+            "required": ["message_id", "confirm"],
+        },
+        "handler": tool_take_in_work,
     },
 }
 

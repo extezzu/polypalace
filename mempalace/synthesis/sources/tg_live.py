@@ -66,9 +66,31 @@ SESSION_DIR = Path(__file__).resolve().parents[3] / ".tg-session"
 SESSION_NAME = "polypalace"
 
 
+def _phones() -> list[str]:
+    """
+    Return list of TG account phone numbers to access.
+
+    Priority:
+      1. TG_PHONES (comma-separated, multi-account support)
+      2. TG_PHONE (single account, backward compat)
+    """
+    multi = os.environ.get("TG_PHONES", "").strip()
+    if multi:
+        return [p.strip() for p in multi.split(",") if p.strip()]
+    single = os.environ.get("TG_PHONE", "").strip()
+    return [single] if single else []
+
+
+def _session_path_for(phone: str) -> str:
+    """Per-phone session file path. Use phone last-6-digits as suffix to avoid + and special chars."""
+    SESSION_DIR.mkdir(parents=True, exist_ok=True)
+    suffix = "".join(c for c in phone if c.isdigit())[-6:] or "default"
+    return str(SESSION_DIR / f"{SESSION_NAME}_{suffix}")
+
+
 def _credentials_available() -> bool:
-    """Check if all required env vars are set."""
-    return all(os.environ.get(k) for k in ("TG_API_ID", "TG_API_HASH", "TG_PHONE"))
+    """Check if api creds + at least one phone are set."""
+    return bool(os.environ.get("TG_API_ID")) and bool(os.environ.get("TG_API_HASH")) and bool(_phones())
 
 
 def _media_type_label(msg) -> str | None:
@@ -120,41 +142,55 @@ def _parse_message(msg) -> dict | None:
     }
 
 
-async def _fetch_async(limit: int = 200, offset_date=None) -> list[dict]:
-    """Async fetch of Saved Messages via telethon."""
-    SESSION_DIR.mkdir(parents=True, exist_ok=True)
-    session_path = str(SESSION_DIR / SESSION_NAME)
-
+async def _fetch_one_account(phone: str, limit: int, offset_date) -> list[dict]:
+    """Fetch Saved Messages for a single TG account by phone."""
     api_id = int(os.environ["TG_API_ID"])
     api_hash = os.environ["TG_API_HASH"]
-    phone = os.environ["TG_PHONE"]
+    session_path = _session_path_for(phone)
 
     client = TelegramClient(session_path, api_id, api_hash)
     await client.connect()
     if not await client.is_user_authorized():
-        # First-run flow: send code, prompt user
-        await client.send_code_request(phone)
-        # Note: in MCP context, interactive prompts won't work; user must
-        # run mempalace.synthesis.sources.tg_live.cli_login() once first.
-        raise RuntimeError(
-            "Telegram session not authorized. Run interactive login once: "
-            "`python -m mempalace.synthesis.sources.tg_live login` "
-            "(asks for SMS code on console)."
-        )
+        await client.disconnect()
+        # Don't raise — gracefully skip this account so other authorized
+        # accounts still work. Login script handles auth setup separately.
+        return []
 
+    # Tag items with the phone account so dedup keys remain unique across accounts
+    suffix = "".join(c for c in phone if c.isdigit())[-6:] or "?"
     out = []
     try:
         async for msg in client.iter_messages(
-            "me",  # Saved Messages
+            "me",
             limit=limit,
             offset_date=offset_date,
         ):
             item = _parse_message(msg)
             if item:
+                # Make id unique per account (telethon msg.id is per-chat, can collide between accounts)
+                item["id"] = f"{suffix}:{item['id']}"
+                item["account"] = suffix
                 out.append(item)
     finally:
         await client.disconnect()
     return out
+
+
+async def _fetch_async(limit: int = 200, offset_date=None) -> list[dict]:
+    """Async fetch of Saved Messages across ALL configured accounts."""
+    phones = _phones()
+    if not phones:
+        return []
+    combined = []
+    for phone in phones:
+        try:
+            items = await _fetch_one_account(phone, limit, offset_date)
+            combined.extend(items)
+        except Exception:
+            # Individual account failure doesn't break the rest
+            continue
+    combined.sort(key=lambda x: x.get("_unix_ts", 0), reverse=True)
+    return combined
 
 
 def list_all(limit: int = 200) -> list[dict]:
@@ -210,6 +246,84 @@ def search(query: str, days: int | None = None, text_only: bool = False) -> list
             matches.append(mc)
     matches.sort(key=lambda x: x["score"], reverse=True)
     return matches[:20]
+
+
+async def _delete_async(account_suffix: str, msg_ids: list[int]) -> dict:
+    """Delete specified Saved Messages from a single account session."""
+    api_id = int(os.environ["TG_API_ID"])
+    api_hash = os.environ["TG_API_HASH"]
+    SESSION_DIR.mkdir(parents=True, exist_ok=True)
+    session_path = str(SESSION_DIR / f"{SESSION_NAME}_{account_suffix}")
+
+    client = TelegramClient(session_path, api_id, api_hash)
+    await client.connect()
+    if not await client.is_user_authorized():
+        await client.disconnect()
+        return {"deleted": 0, "error": f"account {account_suffix} not authorized"}
+    try:
+        # delete from "me" (Saved Messages); revoke=True ensures full deletion
+        result = await client.delete_messages("me", msg_ids, revoke=True)
+        # result is list of Updates objects; sum the count
+        count = sum(getattr(r, "pts_count", len(msg_ids) if msg_ids else 0) for r in result) if result else len(msg_ids)
+        return {"deleted": count, "ids": msg_ids, "account": account_suffix}
+    except Exception as e:
+        return {"deleted": 0, "error": str(e), "ids": msg_ids, "account": account_suffix}
+    finally:
+        await client.disconnect()
+
+
+def take_in_work(message_id: str, confirm: bool = False) -> dict:
+    """
+    Delete a TG Saved Message — used when user takes a task/idea "into work".
+
+    Args:
+        message_id: composite ID from whats_new/surface_ideas output, format "<suffix>:<id>"
+                    (e.g. "196993:42" — last-6-digits-of-phone : telegram-msg-id).
+                    If raw int passed, defaults to first configured account.
+        confirm: must be True. Safety gate to prevent accidental delete via LLM hallucination.
+
+    Returns:
+        dict with deleted count + status. On error: {"deleted": 0, "error": ...}
+    """
+    if not confirm:
+        return {
+            "deleted": 0,
+            "error": "Refusing to delete without explicit confirm=True. "
+                     "Caller must pass confirm=True after user-confirmed intent.",
+        }
+    if not TELETHON_AVAILABLE or not _credentials_available():
+        return {"deleted": 0, "error": "telethon or credentials unavailable"}
+
+    # Parse composite ID
+    if isinstance(message_id, int):
+        # Single-account legacy path: assume primary account
+        phones = _phones()
+        if not phones:
+            return {"deleted": 0, "error": "no TG_PHONE configured"}
+        suffix = "".join(c for c in phones[0] if c.isdigit())[-6:] or "default"
+        ids = [message_id]
+    else:
+        s = str(message_id)
+        if ":" in s:
+            suffix, raw_id = s.split(":", 1)
+            try:
+                ids = [int(raw_id)]
+            except ValueError:
+                return {"deleted": 0, "error": f"bad message_id format: {message_id}"}
+        else:
+            phones = _phones()
+            if not phones:
+                return {"deleted": 0, "error": "no TG_PHONE configured"}
+            suffix = "".join(c for c in phones[0] if c.isdigit())[-6:] or "default"
+            try:
+                ids = [int(s)]
+            except ValueError:
+                return {"deleted": 0, "error": f"bad message_id: {message_id}"}
+
+    try:
+        return asyncio.run(_delete_async(suffix, ids))
+    except Exception as e:
+        return {"deleted": 0, "error": str(e)}
 
 
 def cli_login() -> None:
