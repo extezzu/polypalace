@@ -1,0 +1,162 @@
+{
+  "$schema": "https://modelcontextprotocol.io/schemas/well-known/mcp.schema.json",
+  "schemaVersion": "2025-06-18",
+  "name": "polypalace",
+  "displayName": "PolyPalace — Personal CTO MCP",
+  "version": "0.1.0",
+  "description": "Personal AI memory + activity synthesis across multi-project folders, Brave bookmarks, Telegram Saved Messages, and a ChromaDB-backed palace. Trigger: 'Шо слышно?'.",
+  "homepage": "https://github.com/extezzu/polypalace",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/extezzu/polypalace.git"
+  },
+  "issues": "https://github.com/extezzu/polypalace/issues",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Dmytro Zlodieiev",
+      "url": "https://github.com/extezzu"
+    }
+  ],
+  "upstream": {
+    "name": "MemPalace",
+    "url": "https://github.com/MemPalace/mempalace",
+    "license": "MIT"
+  },
+  "transports": [
+    {
+      "type": "stdio",
+      "command": "polypalace-mcp",
+      "args": ["--palace", "${PALACE_PATH}"],
+      "env": {
+        "MEMPALACE_PALACE_PATH": "${PALACE_PATH}"
+      }
+    }
+  ],
+  "protocolVersions": [
+    "2025-11-25",
+    "2025-06-18",
+    "2025-03-26",
+    "2024-11-05"
+  ],
+  "capabilities": {
+    "tools": {
+      "listChanged": false
+    },
+    "resources": false,
+    "prompts": false,
+    "logging": true,
+    "completions": false,
+    "sampling": false
+  },
+  "tools": {
+    "count": 32,
+    "categories": [
+      {
+        "name": "memory",
+        "description": "Drawers (palace storage units): add, get, list, update, delete, search, check_duplicate",
+        "tools": [
+          "mempalace_add_drawer",
+          "mempalace_get_drawer",
+          "mempalace_list_drawers",
+          "mempalace_update_drawer",
+          "mempalace_delete_drawer",
+          "mempalace_search",
+          "mempalace_check_duplicate"
+        ]
+      },
+      {
+        "name": "knowledge_graph",
+        "description": "Temporal knowledge graph (subject-predicate-object with valid_from/valid_to)",
+        "tools": [
+          "mempalace_kg_add",
+          "mempalace_kg_query",
+          "mempalace_kg_invalidate",
+          "mempalace_kg_timeline",
+          "mempalace_kg_stats"
+        ]
+      },
+      {
+        "name": "graph_navigation",
+        "description": "Wings, rooms, taxonomy, and cross-wing tunnels",
+        "tools": [
+          "mempalace_status",
+          "mempalace_list_wings",
+          "mempalace_list_rooms",
+          "mempalace_get_taxonomy",
+          "mempalace_traverse",
+          "mempalace_find_tunnels",
+          "mempalace_graph_stats",
+          "mempalace_create_tunnel",
+          "mempalace_list_tunnels",
+          "mempalace_delete_tunnel",
+          "mempalace_follow_tunnels"
+        ]
+      },
+      {
+        "name": "diary",
+        "description": "Per-agent journal in AAAK compressed dialect",
+        "tools": [
+          "mempalace_diary_write",
+          "mempalace_diary_read"
+        ]
+      },
+      {
+        "name": "synthesis",
+        "description": "PolyPalace fork-only: cross-source synthesis (projects + bookmarks + Telegram + palace)",
+        "tools": [
+          "whats_new",
+          "surface_ideas",
+          "take_in_work"
+        ]
+      },
+      {
+        "name": "system",
+        "description": "Server lifecycle and dialect introspection",
+        "tools": [
+          "mempalace_get_aaak_spec",
+          "mempalace_hook_settings",
+          "mempalace_memories_filed_away",
+          "mempalace_reconnect"
+        ]
+      }
+    ]
+  },
+  "tags": [
+    "ai",
+    "memory",
+    "mcp",
+    "rag",
+    "chromadb",
+    "personal-assistant",
+    "knowledge-graph",
+    "synthesis",
+    "claude-desktop"
+  ],
+  "runtimes": [
+    {
+      "language": "python",
+      "minVersion": "3.9"
+    }
+  ],
+  "install": {
+    "pip": "pip install polypalace",
+    "claudeCode": "claude mcp add polypalace -- polypalace-mcp --palace ~/Desktop/projects/your-project",
+    "claudeDesktop": {
+      "configPath": "~/Library/Application Support/Claude/claude_desktop_config.json (macOS) | %APPDATA%/Claude/claude_desktop_config.json (Windows)",
+      "snippet": {
+        "mcpServers": {
+          "polypalace": {
+            "command": "polypalace-mcp",
+            "args": ["--palace", "/absolute/path/to/your/project"]
+          }
+        }
+      }
+    }
+  },
+  "trigger_phrases": [
+    "Шо слышно?",
+    "what's new?",
+    "what did I save about"
+  ]
+}

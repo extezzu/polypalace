@@ -88,6 +88,11 @@ from .synthesis.whats_new import whats_new as tool_whats_new  # noqa: E402
 from .synthesis.surface_ideas import surface_ideas as tool_surface_ideas  # noqa: E402
 from .synthesis.take_in_work import take_in_work as tool_take_in_work  # noqa: E402
 
+# MCP Resources + Prompts (spec 2025-11-25) — protocol maximalism
+from . import resources_module  # noqa: E402
+from . import prompts as prompts_module  # noqa: E402
+from .mcp_schemas import OUTPUT_SCHEMAS  # noqa: E402
+
 logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
 logger = logging.getLogger("mempalace_mcp")
 
@@ -378,6 +383,18 @@ _metadata_cache_time = 0
 _METADATA_CACHE_TTL = 5.0  # seconds
 _MAX_RESULTS = 100  # upper bound for search/list limit params
 
+# ---- MCP Resources subscriptions: tools that can mutate observable resources
+_RESOURCE_MUTATING_TOOLS = frozenset({
+    "mempalace_add_drawer",
+    "mempalace_update_drawer",
+    "mempalace_delete_drawer",
+    "mempalace_diary_write",
+    "mempalace_kg_add",
+    "mempalace_kg_invalidate",
+    "mempalace_create_tunnel",
+    "mempalace_delete_tunnel",
+})
+
 
 def _get_cached_metadata(col, where=None):
     """Return cached metadata if fresh, else fetch and cache."""
@@ -551,6 +568,34 @@ EXAMPLE:
 
 Read AAAK naturally — expand codes mentally, treat *markers* as emotional context.
 When WRITING AAAK: use entity codes, mark emotions, keep structure tight."""
+
+SERVER_INSTRUCTIONS = """PolyPalace is a persistent memory layer with three storage shapes — pick the right one before writing.
+
+WHEN TO WRITE WHERE
+1. mempalace_kg_add — for atomic, structured facts that may change over time. Subject-predicate-object triples with optional valid_from. Use for: relationships ("Alice loves Jordan"), state changes ("Max started_school 'Year 7' valid_from=2026-09-01"), employment, locations, ownership. When a fact stops being true call mempalace_kg_invalidate (do NOT delete; the timeline is the value). Predicates: short, snake_case, present-tense ("works_on", "child_of", "lives_in", "uses"). Avoid free-text predicates.
+
+2. mempalace_diary_write — for narrative session reflections in AAAK (compressed dialect; call mempalace_get_aaak_spec once per session if you don't have the spec cached). One entry per session ending. Include: what you built, what you learned, emotional markers (*warm* / *fierce* / *raw*), importance ★-★★★★★. The diary is YOUR journal; future versions of you will read it via mempalace_diary_read.
+
+3. mempalace_add_drawer — for verbatim content that must survive byte-for-byte. Use for: code snippets, decisions, meeting notes, error messages, configuration. Always set wing (project name, prefix wing_ if user-domain) and room (slug for the topic). Run mempalace_check_duplicate first if the content looks recurring.
+
+NAMING CONVENTIONS
+- wings: wing_<project> for projects, wing_user / wing_team / wing_code for cross-cutting.
+- rooms: hyphenated slugs naming a stable concept ("chromadb-setup", "billing-decision-2026"). Prefer reusing an existing room over inventing variants — call mempalace_list_rooms before adding to an unfamiliar wing.
+
+ON WAKE / BEFORE FACTUAL CLAIMS
+Run mempalace_status once per session for taxonomy + AAAK spec. BEFORE you state any fact about a person, project, or past event: call mempalace_kg_query (preferred — temporal-aware) or mempalace_search. Wrong is worse than slow. If a tool returns vector_disabled=true, search still works via BM25 fallback but is keyword-only — broaden your queries.
+
+PERFORMANCE
+- mempalace_search: query MUST be short keywords (<=250 chars). Put background reasoning in the context field, not the query. Filter by wing/room when known. max_distance 1.5 is the default; lower (0.8-1.0) for stricter matches. Limit 5 by default; raise to 20 only when triaging.
+- mempalace_list_drawers / mempalace_kg_timeline: paginate with limit+offset; never request >100.
+- mempalace_search returns a query_sanitized flag if the input contained instruction-like text — if you see it, your query was treated literally; rewrite without imperatives.
+
+CROSS-WING THINKING
+When you notice content in one wing relates to another (an API design in wing_api -> schema in wing_db), call mempalace_create_tunnel. Use mempalace_find_tunnels and mempalace_follow_tunnels to discover cross-domain context the search vector might miss.
+
+POLYPALACE SYNTHESIS LAYER (whats_new / surface_ideas / take_in_work)
+On the trigger phrase "Sho slyshno?" or "what's new?" call whats_new (default 7-day window). For topic recall ("what did I save about X") call surface_ideas. take_in_work permanently deletes a Telegram saved message — require user confirmation (quote first 60 chars) before passing confirm=true.
+"""
 
 
 def tool_list_wings():
@@ -1394,6 +1439,62 @@ def tool_reconnect():
 
 # ==================== MCP PROTOCOL ====================
 
+# ---- Autocomplete callbacks for prompts/completion ----------------------
+def _kg_entity_names():
+    """All entities currently in the KG (for /who-knows /connect autocomplete)."""
+    try:
+        if hasattr(_kg, "list_entities"):
+            return sorted(_kg.list_entities())
+        return []
+    except Exception:
+        return []
+
+
+def _diary_topics():
+    """Distinct diary topic strings the user has written."""
+    col = _get_collection()
+    if not col:
+        return []
+    try:
+        results = col.get(where={"room": "diary"}, include=["metadatas"], limit=10000)
+        topics = {(m or {}).get("topic", "") for m in results.get("metadatas", []) if m}
+        return sorted(t for t in topics if t)
+    except Exception:
+        return []
+
+
+def _diary_dates():
+    """Distinct dates (YYYY-MM-DD) on which diary entries exist."""
+    col = _get_collection()
+    if not col:
+        return []
+    try:
+        results = col.get(where={"room": "diary"}, include=["metadatas"], limit=10000)
+        dates = {(m or {}).get("date", "") for m in results.get("metadatas", []) if m}
+        return sorted((d for d in dates if d), reverse=True)
+    except Exception:
+        return []
+
+
+_PALACE_LOOKUP_CALLABLES = {
+    "kg_entities": _kg_entity_names,
+    "diary_topics": _diary_topics,
+    "diary_dates": _diary_dates,
+}
+
+
+def _resource_error(req_id, exc):
+    """JSON-RPC error envelope для resources_module.ResourceError exceptions."""
+    return {
+        "jsonrpc": "2.0",
+        "id": req_id,
+        "error": {
+            "code": getattr(exc, "json_rpc_code", -32603),
+            "message": str(exc) or exc.__class__.__name__,
+        },
+    }
+
+
 TOOLS = {
     "mempalace_status": {
         "description": "Palace overview — total drawers, wing and room counts",
@@ -1932,8 +2033,14 @@ def handle_request(request):
             "id": req_id,
             "result": {
                 "protocolVersion": negotiated,
-                "capabilities": {"tools": {}},
+                "capabilities": {
+                    "tools": {},
+                    "resources": {"subscribe": True, "listChanged": False},
+                    "prompts": {"listChanged": False},
+                    "completions": {},
+                },
                 "serverInfo": {"name": "mempalace", "version": __version__},
+                "instructions": SERVER_INSTRUCTIONS,
             },
         }
     elif method == "ping":
@@ -1942,16 +2049,125 @@ def handle_request(request):
         # Notifications (no id) never get a response per JSON-RPC spec
         return None
     elif method == "tools/list":
+        tools_listing = []
+        for n, t in TOOLS.items():
+            entry = {
+                "name": n,
+                "description": t["description"],
+                "inputSchema": t["input_schema"],
+            }
+            schema = OUTPUT_SCHEMAS.get(n)
+            if schema is not None:
+                entry["outputSchema"] = schema
+            tools_listing.append(entry)
         return {
             "jsonrpc": "2.0",
             "id": req_id,
-            "result": {
-                "tools": [
-                    {"name": n, "description": t["description"], "inputSchema": t["input_schema"]}
-                    for n, t in TOOLS.items()
-                ]
-            },
+            "result": {"tools": tools_listing},
         }
+    # ==== MCP Resources (spec 2025-11-25) ====================================
+    elif method == "resources/list":
+        try:
+            cursor = params.get("cursor")
+            result = resources_module.list_resources(cursor=cursor)
+            return {"jsonrpc": "2.0", "id": req_id, "result": resources_module.to_jsonable(result)}
+        except resources_module.ResourceError as exc:
+            return _resource_error(req_id, exc)
+        except Exception:
+            logger.exception("resources/list failed")
+            return _resource_error(req_id, resources_module.ResourceError("Internal error"))
+
+    elif method == "resources/templates/list":
+        try:
+            result = resources_module.list_resource_templates()
+            return {"jsonrpc": "2.0", "id": req_id, "result": resources_module.to_jsonable(result)}
+        except Exception:
+            logger.exception("resources/templates/list failed")
+            return _resource_error(req_id, resources_module.ResourceError("Internal error"))
+
+    elif method == "resources/read":
+        uri = params.get("uri")
+        if not uri:
+            return _resource_error(req_id, resources_module.InvalidParamError("uri is required"))
+        try:
+            result = resources_module.read_resource(uri)
+            return {"jsonrpc": "2.0", "id": req_id, "result": resources_module.to_jsonable(result)}
+        except resources_module.ResourceError as exc:
+            return _resource_error(req_id, exc)
+        except Exception:
+            logger.exception("resources/read failed for %s", uri)
+            return _resource_error(req_id, resources_module.ResourceError("Internal error"))
+
+    elif method == "resources/subscribe":
+        uri = params.get("uri")
+        if not uri:
+            return _resource_error(req_id, resources_module.InvalidParamError("uri is required"))
+        try:
+            resources_module.subscribe_resource(uri)
+            return {"jsonrpc": "2.0", "id": req_id, "result": {}}
+        except resources_module.ResourceError as exc:
+            return _resource_error(req_id, exc)
+
+    elif method == "resources/unsubscribe":
+        uri = params.get("uri")
+        if not uri:
+            return _resource_error(req_id, resources_module.InvalidParamError("uri is required"))
+        try:
+            resources_module.unsubscribe_resource(uri)
+            return {"jsonrpc": "2.0", "id": req_id, "result": {}}
+        except resources_module.ResourceError as exc:
+            return _resource_error(req_id, exc)
+
+    # ==== MCP Prompts (spec 2025-11-25) ======================================
+    elif method == "prompts/list":
+        return {"jsonrpc": "2.0", "id": req_id, "result": prompts_module.list_prompts()}
+
+    elif method == "prompts/get":
+        prompt_name = params.get("name")
+        prompt_args = params.get("arguments") or {}
+        if not prompt_name:
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {"code": -32602, "message": "`name` is required"},
+            }
+        result = prompts_module.get_prompt(prompt_name, prompt_args)
+        if isinstance(result, dict) and "_error" in result:
+            return {"jsonrpc": "2.0", "id": req_id, "error": result["_error"]}
+        return {"jsonrpc": "2.0", "id": req_id, "result": result}
+
+    # ==== Completion (resources templates + prompt arguments) ================
+    elif method == "completion/complete":
+        ref = params.get("ref") or {}
+        argument = params.get("argument") or {}
+        context = params.get("context")
+        ref_type = ref.get("type")
+        try:
+            if ref_type == "ref/resource":
+                result = resources_module.complete_argument(ref=ref, argument=argument, context=context)
+                return {"jsonrpc": "2.0", "id": req_id, "result": resources_module.to_jsonable(result)}
+            elif ref_type == "ref/prompt":
+                result = prompts_module.complete_prompt_argument(
+                    ref, argument, context, palace_lookup=_PALACE_LOOKUP_CALLABLES
+                )
+                return {"jsonrpc": "2.0", "id": req_id, "result": result}
+            else:
+                # Unknown ref type — empty result is spec-legal.
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {"completion": {"values": [], "total": 0, "hasMore": False}},
+                }
+        except resources_module.ResourceError as exc:
+            return _resource_error(req_id, exc)
+        except Exception:
+            logger.exception("completion/complete failed (ref_type=%s)", ref_type)
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {"completion": {"values": [], "total": 0, "hasMore": False}},
+            }
+
     elif method == "tools/call":
         tool_name = params.get("name")
         tool_args = params.get("arguments") or {}
@@ -1998,10 +2214,27 @@ def handle_request(request):
         try:
             tool_args.pop("wait_for_previous", None)
             result = TOOLS[tool_name]["handler"](**tool_args)
+            # Fire subscription notifications on write tools (resources_module §subscriptions).
+            if tool_name in _RESOURCE_MUTATING_TOOLS:
+                try:
+                    for notif in resources_module.poll_subscriptions():
+                        sys.stdout.write(json.dumps(notif) + "\n")
+                        sys.stdout.flush()
+                except Exception:
+                    logger.exception("resource subscription poll failed")
+            response_result = {
+                "content": [{"type": "text", "text": json.dumps(result, indent=2)}]
+            }
+            # Attach structuredContent when tool has an outputSchema declared
+            # AND the result is a success (not an error envelope).
+            if tool_name in OUTPUT_SCHEMAS:
+                is_error = isinstance(result, dict) and "error" in result
+                if not is_error:
+                    response_result["structuredContent"] = result
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
-                "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]},
+                "result": response_result,
             }
         except Exception:
             logger.exception(f"Tool error in {tool_name}")
@@ -2041,6 +2274,25 @@ def main():
     # is visible at startup rather than on first use (#1222). Pure
     # filesystem read; never opens a chromadb client.
     _refresh_vector_disabled_flag()
+
+    # ---- Wire MCP Resources backends + subscription emit callback --------
+    resources_module.configure_backends(
+        get_collection=_get_collection,
+        kg=_kg,
+        get_cached_metadata=_get_cached_metadata,
+        fetch_all_metadata=_fetch_all_metadata,
+    )
+
+    def _emit(notif: dict) -> None:
+        try:
+            sys.stdout.write(json.dumps(notif) + "\n")
+            sys.stdout.flush()
+        except Exception:
+            logger.exception("notification emit failed")
+
+    resources_module.set_emit_callback(_emit)
+    logger.info("MCP Resources + Prompts wired (protocol-maximalism v0.4)")
+
     while True:
         try:
             line = sys.stdin.readline()

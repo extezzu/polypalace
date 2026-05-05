@@ -6,6 +6,67 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [PolyPalace 0.4.0] — 2026-05-05 — protocol maximalism
+
+PolyPalace fork's biggest protocol-level upgrade. Closes the gap vs `doobidoo/mcp-memory-service` competitor (1,775 stars, 173 releases) by leaning into MCP spec features they don't implement (Resources, Prompts, completions, structured outputs) instead of competing on backend matrix or web dashboards.
+
+### Added — MCP Resources (spec 2025-11-25)
+
+- **8 URI schemes** exposing palace as resources: `palace://drawers/{id}`, `palace://drawers/recent`, `palace://diary/{date}`, `palace://diary/recent`, `palace://kg/{node_id}`, `palace://kg/timeline/{from}/{to}`, `palace://wings/{wing}/rooms/{room}`, `palace://taxonomy`.
+- **`resources/list`** with cursor-paginated access (50 per page, max 200, opaque base64 cursor).
+- **`resources/read`** with regex dispatch over URI patterns; returns `text/markdown` for drawers/diary, `application/json` for KG/taxonomy.
+- **`resources/templates/list`** — 5 RFC 6570 templates with typed parameters.
+- **`resources/subscribe`** + **`resources/unsubscribe`** + **`notifications/resources/updated`** — hash-based change detection that catches all writes (MCP tool, CLI, hooks, miner) since it re-renders URI body on each write-tool dispatch.
+- New module `mempalace/resources_module.py` (1065 lines, self-contained, py_compile clean).
+
+### Added — MCP Prompts (slash commands, spec 2025-11-25)
+
+- **8 slash commands** as workflow scaffolds: `/recall`, `/journal`, `/state-of-mind`, `/who-knows`, `/time-machine`, `/connect`, `/forget-old`, `/whats-on-my-mind`.
+- **`prompts/list`** + **`prompts/get`** with proper argument validation (returns `-32602` envelopes for missing required args, malformed dates, unknown enum values).
+- Prompts compose existing `mempalace_*` tools via instruction text — server never blocks; client LLM executes the chain. Trust boundary stays clean.
+- Safety guards: `/forget-old` forbids `mempalace_delete_drawer` without user-confirmed IDs; `/connect` capped at 12 KG queries.
+- New module `mempalace/prompts.py` (826 lines).
+
+### Added — MCP Completions (spec 2025-11-25 §1.2)
+
+- **`completion/complete`** dispatcher routes by `ref.type`:
+  - `ref/resource` → `resources_module.complete_argument` with `context.arguments` chaining (the new 2025-11-25 typed-picker feature — selecting a `wing` filters subsequent `room` candidates).
+  - `ref/prompt` → `prompts_module.complete_prompt_argument` wired to `_PALACE_LOOKUP_CALLABLES` (KG entities, diary topics, diary dates).
+- Graceful fallback: unknown `ref.type` returns empty completion, callback exceptions return empty values (spec-legal).
+
+### Added — Structured tool outputs (spec 2025-06-18+)
+
+- **`outputSchema` declarations on 10 high-traffic tools**: `mempalace_status`, `mempalace_search`, `mempalace_kg_query`, `mempalace_kg_timeline`, `mempalace_kg_stats`, `mempalace_get_drawer`, `mempalace_list_drawers`, `mempalace_find_tunnels`, `mempalace_follow_tunnels`, `mempalace_diary_read`.
+- **`structuredContent` field** on `tools/call` results when output schema declared and result is success (not error envelope). Unlocks reliable tool chaining without re-parsing JSON from text.
+- Shared `$defs` (`DrawerMetadata`, `ErrorEnvelope`) referenced via `#/$defs/*` for DRY schema authoring.
+- New module `mempalace/mcp_schemas.py`.
+
+### Added — Discovery & system prompt
+
+- **`.well-known/mcp.json`** at repo root — manifest consumed by glama.ai, smithery.ai, modelcontextprotocol.io registries. Lists 32 tools grouped into 6 categories, declares stdio transport, supported protocol versions, install snippets for Claude Code + Desktop.
+- **`serverInfo.instructions`** field на `initialize` response (~3275 chars). Compatible clients (Claude Desktop, Claude Code) inject это в LLM system prompt automatically. Free behavior shift on the client — covers when to write to KG vs diary vs drawer, naming conventions, performance tips, AAAK protocol.
+
+### Capability negotiation
+
+- `initialize` response now advertises `tools`, `resources` (with `subscribe: true`), `prompts`, and `completions` capabilities.
+- `serverInfo.name` retained as `"mempalace"` to avoid breaking existing Claude Desktop configs; `.well-known/mcp.json` advertises new `polypalace` name for fresh installs.
+
+### Strategic positioning
+
+- Per `data/research/doobidoo-mcp-memory-competitor-2026-05-05.md`: doobidoo's `mcp-memory-service` exposes Tools only (no Resources, Prompts, Sampling, Elicitation, Output Schemas, `.well-known`, Subscriptions, Tasks). PolyPalace 0.4 closes this protocol gap and positions on **MCP protocol maximalism + single-user cognitive workspace** as orthogonal axis vs their team-first/RBAC/gRPC roadmap.
+
+### Compatibility
+
+- All wire-format additions are strictly additive. Older Claude Desktop / Claude Code clients ignore unknown fields; existing `content[].text` payloads unchanged byte-for-byte for non-schema'd tools.
+- Existing tool dict structure preserved; `output_schema` looked up via separate `OUTPUT_SCHEMAS` dict in `mcp_schemas.py` (no `TOOLS` dict mutation).
+
+### Compiled & tested
+
+- All 3 new modules pass `python -m py_compile`.
+- End-to-end smoke tests verify: `initialize` returns 4 capabilities + 3275-char instructions; `tools/list` returns 32 tools with 10 carrying `outputSchema`; `prompts/list` returns 8 prompts; `resources/list` returns 3 static resources; `resources/templates/list` returns 5 templates.
+
+---
+
 ## [3.3.4] — unreleased
 
 ### Added
